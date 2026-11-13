@@ -103,6 +103,32 @@ fn image_kind(buf: &[u8]) -> Option<&'static str> {
     None
 }
 
+
+/// 封面降采样：站点原图常见 175 KB，按最大边宽 540 重编码 JPEG(q72) 通常 60–90 KB。
+/// 手机蜂窝网络下首屏流量能少一半；解码失败就原样返回，绝不因为优化丢图。
+fn shrink_cover(bytes: Vec<u8>, kind: &str) -> (String, Vec<u8>) {
+    const MAX_W: u32 = 540;
+    const SKIP_BELOW: usize = 60 * 1024;
+    if bytes.len() < SKIP_BELOW {
+        return (kind.to_string(), bytes);
+    }
+    let Ok(img) = image::load_from_memory(&bytes) else {
+        return (kind.to_string(), bytes);
+    };
+    if img.width() <= MAX_W {
+        return (kind.to_string(), bytes);
+    }
+    let scale = MAX_W as f32 / img.width() as f32;
+    let h = ((img.height() as f32) * scale).round().max(1.0) as u32;
+    let small = img.resize_exact(MAX_W, h, image::imageops::FilterType::Triangle);
+    let mut out = Vec::with_capacity(64 * 1024);
+    let enc = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 72);
+    match small.write_with_encoder(enc) {
+        Ok(()) => ("image/jpeg".to_string(), out),
+        Err(_) => (kind.to_string(), bytes),
+    }
+}
+
 /// 取封面：命中缓存直接返回，否则下载并按需解密。
 pub async fn load_image(url: &str) -> Result<(String, Arc<Vec<u8>>), String> {
     if let Some(hit) = IMG_CACHE.lock().unwrap().get(url).cloned() {
@@ -117,6 +143,7 @@ pub async fn load_image(url: &str) -> Result<(String, Arc<Vec<u8>>), String> {
         strip_padding(dec)
     };
     let kind = image_kind(&plain).unwrap_or("image/jpeg").to_string();
+    let (kind, plain) = shrink_cover(plain, &kind);
     let arc = Arc::new(plain);
     cache_put(&IMG_CACHE, url.to_string(), arc.clone(), IMG_CACHE_MAX);
     Ok((kind, arc))

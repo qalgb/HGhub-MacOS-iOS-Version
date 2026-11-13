@@ -62,6 +62,8 @@ const VideoSurface = forwardRef<VideoHandle, Props>(function VideoSurface(
   const recoverTimerRef = useRef<number | null>(null);
   const lastSizeRef = useRef({ w: 0, h: 0 });
   const [ready, setReady] = useState(false);
+  /* iOS/WKWebView：换源后的自动播放没有用户手势会被拒（NotAllowedError），给一个明确的解锁按钮 */
+  const [blockedAutoplay, setBlockedAutoplay] = useState(false);
   const [svgFallback, setSvgFallback] = useState(false);
   const store = useStore();
   const srMode = store?.srMode ?? "off";
@@ -157,6 +159,15 @@ const VideoSurface = forwardRef<VideoHandle, Props>(function VideoSurface(
     },
   }));
 
+  /* 自动播放被浏览器以 NotAllowedError 拒绝时，亮出"点此继续播放"（真实手势，iOS 必放行）。 */
+  const attemptAutoplay = (source: string) => {
+    const p = activity.play(source, true) as unknown as Promise<void> | undefined;
+    if (p && typeof p.catch === "function") {
+      p.catch((e: { name?: string }) => { if (e?.name === "NotAllowedError") setBlockedAutoplay(true); });
+    }
+  };
+  useEffect(() => { if (blockedAutoplay) setReady(true); }, [blockedAutoplay]);
+
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !src) return;
@@ -219,7 +230,7 @@ const VideoSurface = forwardRef<VideoHandle, Props>(function VideoSurface(
       hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         if (activity.isActive()) hls.startLoad();
-        if (autoPlay) activity.play("manifest_autoplay", true);
+        if (autoPlay) attemptAutoplay("manifest_autoplay");
       });
       hls.on(Hls.Events.FRAG_BUFFERED, () => {
         recoverCountRef.current = 0;
@@ -281,7 +292,7 @@ const VideoSurface = forwardRef<VideoHandle, Props>(function VideoSurface(
       });
     } else {
       video.src = url;
-      if (autoPlay) activity.play("native_autoplay", true);
+      if (autoPlay) attemptAutoplay("native_autoplay");
     }
 
     return () => {
@@ -340,6 +351,21 @@ const VideoSurface = forwardRef<VideoHandle, Props>(function VideoSurface(
           transformOrigin: "center center",
           transition: isGesturing ? "none" : "transform .2s cubic-bezier(.2,0,0,1)",
         }}>
+      {blockedAutoplay && (
+        <button
+          type="button"
+          aria-label="继续播放"
+          onClick={() => {
+            setBlockedAutoplay(false);
+            const p = activity.play("gesture_unlock") as unknown as Promise<void> | undefined;
+            if (p && typeof p.catch === "function") p.catch(() => setBlockedAutoplay(true));
+          }}
+          className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-black/45 text-white"
+        >
+          <span className="flex h-16 w-16 items-center justify-center rounded-full bg-white/90 text-black text-2xl">▶</span>
+          <span className="text-[13px]">点此继续播放</span>
+        </button>
+      )}
       <video
         ref={videoRef}
         playsInline
@@ -396,6 +422,7 @@ const VideoSurface = forwardRef<VideoHandle, Props>(function VideoSurface(
         }}
         onPlaying={(e) => {
           setReady(true);
+          setBlockedAutoplay(false);
           recoverCountRef.current = 0;
           reportSizeAndDuration(e.target as HTMLVideoElement);
           if (activity.isActive()) onPlaying?.();

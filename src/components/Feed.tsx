@@ -176,6 +176,22 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
     }
   };
 
+  /* 续播兜底：原来只有「观看记录」入口传 startTime，从首页/分类/搜索点开同一部剧
+     会从 0 开始，并在 5 秒后把已存进度覆盖掉。这里按 id:ep 兜一次底。 */
+  const autoResumed = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!duration || duration < 5) return;
+    const key = `${curId}:${curEp}`;
+    if (autoResumed.current.has(key)) return;
+    const explicit = startTime && startTime > 1 && key === `${videoIds[startIndex]}:${startEp || 1}`;
+    autoResumed.current.add(key);
+    if (explicit) return;
+    const rec = store.history.find((h) => h.id === curId && (Number(h.ep) || 1) === curEp);
+    if (!rec || !(rec.t > 1) || rec.t >= duration - 3) return;
+    videoRef.current?.seek(rec.t, "history_resume_auto");
+    setTime(rec.t);
+  }, [curId, curEp, duration, startTime, startEp, startIndex, videoIds, store.history]);
+
   /* 拿到时长后再续播：只对进入时那一条生效，且不跳到片尾 */
   const onDurationTick = (d: number) => {
     setDuration(d);

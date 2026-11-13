@@ -23,10 +23,13 @@ export function usePlaybackActivity(
     const hls = hlsRef.current;
     if (hls?.levels.length && !hls.loadingEnabled) hls.startLoad(v.currentTime);
     latest.current.trace("play.request", { source });
-    v.play().then(() => {
+    const started = v.play();
+    started.then(() => {
       // The page may have changed while play() was pending.
       if (!mounted.current || !latest.current.active) v.pause();
     }).catch(e => latest.current.trace("play.rejected", { source, error_name: e?.name }));
+    // 返回给调用方：iOS / WKWebView 无手势时会抛 NotAllowedError，需要提示用户点一下
+    return started;
   }, []);
   const pause = useCallback((source = "handle") => {
     wanted.current = false;

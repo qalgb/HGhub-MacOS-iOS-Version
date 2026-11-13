@@ -60,7 +60,8 @@ const LS = "hghub_app_v1";
 const DEFAULTS: Persist = {
   likes: [], favs: [], history: [], follows: [],
   muted: true, muteOnStartup: true, volume: 0.7, searchHist: [],
-  srMode: "natural",
+  // 默认关闭 GPU 超分：逐帧 WebGL 重绘在 iPhone 上明显费电发热，用户要画质自己开
+  srMode: "off",
 };
 
 /** 旧版本 history 是 number[]，读出来时升级成带进度的结构 */
@@ -93,7 +94,7 @@ function loadPersist(): Persist {
       : rawSr === "anime" ? "anime_3d"
       : rawSr === "off" || rawSr === "natural" || rawSr === "cinema" || rawSr === "crisp" || rawSr === "anime_3d" || rawSr === "anime_2d"
         ? rawSr
-        : "natural";
+        : "off";
     return { ...p, muteOnStartup, muted: muteOnStartup || p.muted === true, history: normalizeHistory(p.history), srMode };
   } catch {
     return DEFAULTS;
