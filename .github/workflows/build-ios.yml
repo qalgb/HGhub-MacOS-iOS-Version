@@ -9,7 +9,7 @@ on:
 jobs:
   ios:
     name: iOS Build (IPA)
-    runs-on: macos-latest
+    runs-on: macos-14
     permissions:
       contents: write
     env:
